@@ -12,7 +12,7 @@ import { listNodes, getNode, createNode, updateNode, deleteNode } from "./tools/
 import { listPages, getPage, createPage, updatePage, deletePage } from "./tools/pages.js";
 
 // Путь к директории с настройками вашей Astro CMS
-const CMS_CONTENT_DIR = path.join(process.cwd(), "../Agentic_CMS/src/content");
+const CMS_CONTENT_DIR = path.join(process.cwd(), "../Agentic_CMS_Site/src/content");
 
 // 1. Инициализация сервера
 const server = new Server(
