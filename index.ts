@@ -6,19 +6,19 @@ import {
   ErrorCode,
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { z } from "zod";
-import { readFile, writeFile } from "fs/promises";
 import path from "path";
+import { getSettings, updateSettings } from "./tools/settings.js";
+import { listNodes, getNode, createNode, updateNode, deleteNode } from "./tools/nodes.js";
+import { listPages, getPage, createPage, updatePage, deletePage } from "./tools/pages.js";
 
 // Путь к директории с настройками вашей Astro CMS
-// В проде это будет браться из переменных окружения
 const CMS_CONTENT_DIR = path.join(process.cwd(), "../Agentic_CMS/src/content");
 
 // 1. Инициализация сервера
 const server = new Server(
   {
     name: "agentic-cms-mcp",
-    version: "0.1.0",
+    version: "0.2.0",
   },
   {
     capabilities: {
@@ -27,22 +27,11 @@ const server = new Server(
   }
 );
 
-// 2. Zod-схемы для аргументов инструментов (совпадают с Astro)
-const SettingsArgsSchema = z.object({
-  setting_type: z.enum(["business", "navigation", "site"]),
-  locale: z.string().default("ru"),
-});
-
-const UpdateSettingsArgsSchema = z.object({
-  setting_type: z.enum(["business", "navigation", "site"]),
-  locale: z.string().default("ru"),
-  payload: z.any(),
-});
-
-// 3. Регистрация доступных инструментов
+// 2. Регистрация доступных инструментов
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
+      // Settings
       {
         name: "get_settings",
         description: "Возвращает текущую JSON конфигурацию сайта (business, navigation, site).",
@@ -68,52 +57,196 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
           required: ["setting_type", "payload"],
         },
       },
+      // Nodes
+      {
+        name: "list_nodes",
+        description: "Возвращает список узлов (новости, услуги и т.д.) для указанной локали.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            locale: { type: "string", default: "ru" },
+          },
+        },
+      },
+      {
+        name: "get_node",
+        description: "Возвращает данные конкретного узла по ID.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "create_node",
+        description: "Создает новый узел.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            locale: { type: "string", default: "ru" },
+            payload: {
+              type: "object",
+              properties: {
+                frontmatter: { type: "object" },
+                body: { type: "string" },
+              },
+              required: ["frontmatter", "body"],
+            },
+          },
+          required: ["payload"],
+        },
+      },
+      {
+        name: "update_node",
+        description: "Обновляет существующий узел.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+            payload: {
+              type: "object",
+              properties: {
+                frontmatter: { type: "object" },
+                body: { type: "string" },
+              },
+              required: ["frontmatter", "body"],
+            },
+          },
+          required: ["id", "payload"],
+        },
+      },
+      {
+        name: "delete_node",
+        description: "Удаляет узел (ДЕСТРУКТИВНОЕ ДЕЙСТВИЕ, ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+          },
+          required: ["id"],
+        },
+      },
+      // Pages
+      {
+        name: "list_pages",
+        description: "Возвращает список структурных страниц.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            locale: { type: "string", default: "ru" },
+          },
+        },
+      },
+      {
+        name: "get_page",
+        description: "Возвращает данные конкретной страницы.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+          },
+          required: ["id"],
+        },
+      },
+      {
+        name: "create_page",
+        description: "Создает новую страницу.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            locale: { type: "string", default: "ru" },
+            payload: {
+              type: "object",
+              properties: {
+                frontmatter: { type: "object" },
+                body: { type: "string" },
+              },
+              required: ["frontmatter", "body"],
+            },
+          },
+          required: ["payload"],
+        },
+      },
+      {
+        name: "update_page",
+        description: "Обновляет существующую страницу.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+            payload: {
+              type: "object",
+              properties: {
+                frontmatter: { type: "object" },
+                body: { type: "string" },
+              },
+              required: ["frontmatter", "body"],
+            },
+          },
+          required: ["id", "payload"],
+        },
+      },
+      {
+        name: "delete_page",
+        description: "Удаляет страницу (ДЕСТРУКТИВНОЕ ДЕЙСТВИЕ, ТРЕБУЕТ ПОДТВЕРЖДЕНИЯ).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            locale: { type: "string", default: "ru" },
+          },
+          required: ["id"],
+        },
+      },
     ],
   };
 });
 
-// 4. Обработка вызовов инструментов
+// 3. Обработка вызовов инструментов
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
   try {
-    if (request.params.name === "get_settings") {
-      const args = SettingsArgsSchema.parse(request.params.arguments);
-      const fileName = args.setting_type === "site" ? "site.json" : `${args.setting_type}.${args.locale}.json`;
-      const filePath = path.join(CMS_CONTENT_DIR, "settings", fileName);
+    switch (name) {
+      case "get_settings": return await getSettings(CMS_CONTENT_DIR, args);
+      case "update_settings": return await updateSettings(CMS_CONTENT_DIR, args);
       
-      const fileContent = await readFile(filePath, "utf-8");
-      return {
-        content: [{ type: "text", text: fileContent }],
-      };
-    }
+      case "list_nodes": return await listNodes(CMS_CONTENT_DIR, args);
+      case "get_node": return await getNode(CMS_CONTENT_DIR, args);
+      case "create_node": return await createNode(CMS_CONTENT_DIR, args);
+      case "update_node": return await updateNode(CMS_CONTENT_DIR, args);
+      case "delete_node": return await deleteNode(CMS_CONTENT_DIR, args);
+      
+      case "list_pages": return await listPages(CMS_CONTENT_DIR, args);
+      case "get_page": return await getPage(CMS_CONTENT_DIR, args);
+      case "create_page": return await createPage(CMS_CONTENT_DIR, args);
+      case "update_page": return await updatePage(CMS_CONTENT_DIR, args);
+      case "delete_page": return await deletePage(CMS_CONTENT_DIR, args);
 
-    if (request.params.name === "update_settings") {
-      const args = UpdateSettingsArgsSchema.parse(request.params.arguments);
-      const fileName = args.setting_type === "site" ? "site.json" : `${args.setting_type}.${args.locale}.json`;
-      const filePath = path.join(CMS_CONTENT_DIR, "settings", fileName);
-      
-      // Детерминированное сохранение. 
-      // При желании здесь можно прогнать args.payload через строгую Zod схему из content.config.ts
-      await writeFile(filePath, JSON.stringify(args.payload, null, 2), "utf-8");
-      
-      return {
-        content: [{ type: "text", text: `Настройки ${args.setting_type}${args.setting_type === 'site' ? '' : '.' + args.locale} успешно обновлены.` }],
-      };
+      default:
+        throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`);
     }
-
-    throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${request.params.name}`);
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      throw new McpError(ErrorCode.InvalidParams, `Validation error: ${error.message}`);
-    }
-    throw new McpError(ErrorCode.InternalError, `Server error: ${String(error)}`);
+    if (error instanceof McpError) throw error;
+    return {
+      content: [{ type: "text", text: `Error: ${String(error)}` }],
+      isError: true,
+    };
   }
 });
 
-// 5. Запуск сервера
+// 4. Запуск сервера
 async function run() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error("Agentic CMS MCP Server running on stdio"); // stdio используется для данных, логи пишем в stderr
+  console.error("Agentic CMS MCP Server (v0.2.0) running on stdio");
 }
 
 run().catch(console.error);
