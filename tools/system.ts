@@ -1,6 +1,7 @@
 import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
+import { readFile } from "fs/promises";
 
 const execPromise = promisify(exec);
 
@@ -177,11 +178,11 @@ export async function getPreviewUrl(siteDir: string) {
     // Ждем немного, чтобы порт 4321 открылся
     await new Promise(resolve => setTimeout(resolve, 3000));
 
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       const ltProcess = exec("npx localtunnel --port 4321", { cwd: projectRoot });
       let urlFound = false;
 
-      ltProcess.stdout?.on("data", (data) => {
+      ltProcess.stdout?.on("data", async (data) => {
         const output = data.toString();
         const match = output.match(/your url is: (https:\/\/.*)/);
         if (match && !urlFound) {
@@ -195,11 +196,24 @@ export async function getPreviewUrl(siteDir: string) {
             previewProcess.kill();
           }, 15 * 60 * 1000);
 
+          // We try to append the base path from site.json
+          let finalUrl = url;
+          try {
+            const siteJsonPath = path.join(siteDir, "settings/site.json");
+            const siteData = JSON.parse(await readFile(siteJsonPath, "utf-8"));
+            if (siteData.base && siteData.base !== "/") {
+              const base = siteData.base.startsWith("/") ? siteData.base : "/" + siteData.base;
+              finalUrl = `${url.replace(/\/$/, "")}${base}`;
+            }
+          } catch (e) {
+            console.error("[MCP] Could not read base path for preview URL:", e);
+          }
+
           resolve({
             content: [
               {
                 type: "text",
-                text: `Preview is ready!\n\nURL: ${url}\n\nThis link will be active for 15 minutes.`,
+                text: `Preview is ready!\n\nURL: ${finalUrl}\n\nThis link will be active for 15 minutes.`,
               },
             ],
           });
