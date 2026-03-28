@@ -13,7 +13,7 @@ import { listPages, getPage, createPage, updatePage, deletePage } from "./tools/
 import { listBlocks, getBlock, createBlock, updateBlock, deleteBlock } from "./tools/blocks.js";
 import { listTaxonomy, getTerm, createTerm, updateTerm, deleteTerm } from "./tools/taxonomy.js";
 import { listStaff, getStaff, createStaff, updateStaff, deleteStaff } from "./tools/staff.js";
-import { verifyBuild, getGitStatus, rollbackChanges, gitCommit, gitPush } from "./tools/system.js";
+import { verifyBuild, getGitStatus, rollbackChanges, gitCommit, gitPush, getPreviewUrl } from "./tools/system.js";
 
 // Путь к директории с настройками вашей Astro CMS
 const CMS_CONTENT_DIR = path.join(process.cwd(), "../Agentic_CMS_Site/src/content");
@@ -463,12 +463,17 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         description: "Отправляет коммиты на GitHub (ветка main).",
         inputSchema: { type: "object", properties: {} },
       },
+      {
+        name: "get_preview_url",
+        description: "Генерирует временную публичную ссылку для предпросмотра сайта.",
+        inputSchema: { type: "object", properties: {} },
+      },
     ],
   };
 });
 
 // 3. Обработка вызовов инструментов
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler(CallToolRequestSchema, (async (request) => {
   const { name, arguments: args } = request.params;
   console.error(`[MCP] Calling tool: ${name}`, args || {});
 
@@ -512,6 +517,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "rollback_changes": return await rollbackChanges(CMS_CONTENT_DIR);
       case "git_commit": return await gitCommit(CMS_CONTENT_DIR, args);
       case "git_push": return await gitPush(CMS_CONTENT_DIR);
+      case "get_preview_url": return await getPreviewUrl(CMS_CONTENT_DIR);
 
       default:
         throw new McpError(ErrorCode.MethodNotFound, `Tool not found: ${name}`);
@@ -523,7 +529,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       isError: true,
     };
   }
-});
+}) as any);
 
 // 4. Запуск сервера
 async function run() {

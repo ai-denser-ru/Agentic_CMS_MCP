@@ -155,3 +155,77 @@ export async function gitPush(siteDir: string) {
     };
   }
 }
+
+/**
+ * Запускает временный веб-превью через localtunnel.
+ */
+export async function getPreviewUrl(siteDir: string) {
+  try {
+    const projectRoot = path.join(siteDir, "..");
+    
+    // 1. Собираем сайт
+    console.error("[MCP] Building site for preview...");
+    await execPromise("npm run build", { cwd: projectRoot });
+
+    // 2. Запускаем сервер превью и туннель
+    // Мы используем npx localtunnel. Он выдает URL в stdout.
+    console.error("[MCP] Starting preview server and tunnel...");
+    
+    // Запускаем через shell, чтобы иметь возможность убить дерево процессов
+    const previewProcess = exec("npm run preview", { cwd: projectRoot });
+    
+    // Ждем немного, чтобы порт 4321 открылся
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    return new Promise((resolve) => {
+      const ltProcess = exec("npx localtunnel --port 4321", { cwd: projectRoot });
+      let urlFound = false;
+
+      ltProcess.stdout?.on("data", (data) => {
+        const output = data.toString();
+        const match = output.match(/your url is: (https:\/\/.*)/);
+        if (match && !urlFound) {
+          urlFound = true;
+          const url = match[1].trim();
+          
+          // Планируем завершение через 15 минут
+          setTimeout(() => {
+            console.error("[MCP] Cleaning up preview processes...");
+            ltProcess.kill();
+            previewProcess.kill();
+          }, 15 * 60 * 1000);
+
+          resolve({
+            content: [
+              {
+                type: "text",
+                text: `Preview is ready!\n\nURL: ${url}\n\nThis link will be active for 15 minutes.`,
+              },
+            ],
+          });
+        }
+      });
+
+      ltProcess.stderr?.on("data", (data) => {
+        console.error(`[LT Error]: ${data}`);
+      });
+
+      // Тайм-аут на поиск URL
+      setTimeout(() => {
+        if (!urlFound) {
+          ltProcess.kill();
+          previewProcess.kill();
+          resolve({
+            content: [{ type: "text", text: "Timed out waiting for localtunnel URL." }],
+            isError: true,
+          });
+        }
+      }, 30000);
+    });
+  } catch (error: any) {
+    return {
+      content: [{ type: "text", text: `Preview error: ${error.message}` }],
+      isError: true,
+    };
+  }
+}
